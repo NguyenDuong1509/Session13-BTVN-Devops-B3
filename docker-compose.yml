@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # =========================================================================
+  # PROMETHEUS SERVER
+  # =========================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: prometheus-server
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - monitoring-net
+    depends_on:
+      - node-exporter
+
+  # =========================================================================
+  # NODE EXPORTER - GIÁM SÁT SỨC KHỎE MÁY CHỦ LINUX (HOST VPS)
+  # =========================================================================
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: node-exporter
+    restart: unless-stopped
+    # BẢO MẬT: Chỉ bind port 9100 vào localhost (127.0.0.1) hoặc chỉ mở nội bộ Docker
+    # Tuyệt đối KHÔNG dùng "0.0.0.0:9100:9100" để tránh lộ thông tin nhạy cảm ra Internet!
+    ports:
+      - "127.0.0.1:9100:9100"
+    volumes:
+      # MOUNT CÁC VOLUME ĐẶC BIỆT ĐỂ ĐỌC PHẦN CỨNG THỰC TẾ CỦA HOST:
+      # 1. /proc: Cung cấp thông số CPU, RAM, Network, Load Average của Host OS
+      - /proc:/host/proc:ro
+      # 2. /sys: Cung cấp thông số nhân kernel, ổ cứng (block devices), cảm biến nhiệt độ
+      - /sys:/host/sys:ro
+      # 3. / (Root filesystem): Cung cấp thông số dung lượng ổ đĩa, inode thực tế của Host
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      # Loại trừ các mount point ảo bên trong container để tránh trùng lặp
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring-net
+
+networks:
+  monitoring-net:
+    driver: bridge
+
+volumes:
+  prometheus_data:

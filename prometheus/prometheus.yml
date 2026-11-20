@@ -1,0 +1,29 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # =========================================================================
+  # JOB 1: Backend Spring Boot Service (Actuator)
+  # =========================================================================
+  - job_name: 'backend'
+    scrape_interval: 10s
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          environment: 'production'
+          service: 'e-commerce-backend'
+
+  # =========================================================================
+  # JOB 2: Node Exporter - Giám sát sức khỏe máy chủ VPS (CPU, RAM, Disk, Network)
+  # =========================================================================
+  - job_name: 'node'
+    scrape_interval: 10s
+    static_configs:
+      # Giao tiếp trực tiếp qua tên service trong mạng nội bộ Docker network
+      - targets: ['node-exporter:9100']
+        labels:
+          instance: 'vps-production'
+          environment: 'production'
+          os: 'ubuntu-22.04'

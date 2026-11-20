@@ -1,0 +1,62 @@
+================================================================================
+SESSION 13 - BÀI TẬP 3: KHÁM SỨC KHỎE MÁY CHỦ VỚI NODE EXPORTER
+================================================================================
+
+1. KHỞI CHẠY STACK PROMETHEUS VÀ NODE EXPORTER
+--------------------------------------------------------------------------------
+# Khởi động dịch vụ nền:
+docker compose up -d
+
+# Xem log kiểm tra Node Exporter đọc proc/sys:
+docker compose logs -f node-exporter
+
+# Kiểm tra trạng thái containers:
+docker compose ps
+
+2. KIỂM TRA METRICS THỰC TẾ TỪ NODE EXPORTER
+--------------------------------------------------------------------------------
+# Kiểm tra trực tiếp endpoint metrics từ localhost:
+curl -s http://localhost:9100/metrics | head -n 30
+
+# Lọc các metric quan trọng về RAM/Memory của Host:
+curl -s http://localhost:9100/metrics | grep -E "node_memory_MemTotal_bytes|node_memory_MemAvailable_bytes"
+
+# Lọc các metric về Disk/Dung lượng ổ cứng thực tế:
+curl -s http://localhost:9100/metrics | grep -E "node_filesystem_size_bytes|node_filesystem_free_bytes" | grep 'mountpoint="/"'
+
+# Lọc các metric về CPU:
+curl -s http://localhost:9100/metrics | grep "node_cpu_seconds_total" | head -n 10
+
+3. KIỂM TRA TRẠNG THÁI TARGET NODE TRÊN PROMETHEUS
+--------------------------------------------------------------------------------
+# Kiểm tra Target qua Prometheus API:
+curl -s http://localhost:9090/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health, scrapeUrl: .scrapeUrl}'
+
+# Output mong đợi:
+# {
+#   "job": "node",
+#   "health": "up",
+#   "scrapeUrl": "http://node-exporter:9100/metrics"
+# }
+
+4. CÁC CÂU LỆNH TRUY VẤN (PROMQL) THEO DÕI SỨC KHỎE VPS
+--------------------------------------------------------------------------------
+# 1. Tính % RAM đã sử dụng của VPS:
+# Query: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
+curl -sG --data-urlencode 'query=(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100' http://localhost:9090/api/v1/query | jq .
+
+# 2. Tính % Ổ đĩa Root (/) đã sử dụng:
+# Query: 100 - ((node_filesystem_avail_bytes{mountpoint="/"} * 100) / node_filesystem_size_bytes{mountpoint="/"})
+curl -sG --data-urlencode 'query=100 - ((node_filesystem_avail_bytes{mountpoint="/"} * 100) / node_filesystem_size_bytes{mountpoint="/"})' http://localhost:9090/api/v1/query | jq .
+
+# 3. Tính % CPU Load trung bình trong 5 phút:
+# Query: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+curl -sG --data-urlencode 'query=100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)' http://localhost:9090/api/v1/query | jq .
+
+5. BẢO MẬT CỔNG 9100 VỚI UFW FIREWALL
+--------------------------------------------------------------------------------
+# Đảm bảo KHÔNG cho Internet truy cập thẳng port 9100:
+sudo ufw deny 9100/tcp
+
+# Chỉ cho phép IP của máy chủ Prometheus (nếu chạy riêng biệt):
+# sudo ufw allow from <PROMETHEUS_SERVER_IP> to any port 9100 proto tcp
